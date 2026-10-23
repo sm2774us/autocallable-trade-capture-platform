@@ -771,7 +771,7 @@ At $\lambda=5000$ msg/s that is 20 renders/s with 250 messages each instead of 5
 
 For fills $(q_i, p_i)$ with $p_i$ in micros:
 
-$$\text{VWAP}=\operatorname{round}\!\left(\frac{\sum_i q_i\,p_i}{\sum_i q_i}\right)\ \text{ computed as }\ \left\lfloor\frac{2V+Q}{2Q}\right\rfloor\ \text{ for } V=\sum q_ip_i,\ Q=\sum q_i$$
+$$\text{VWAP}=\text{round}\!\left(\frac{\sum_i q_i\,p_i}{\sum_i q_i}\right)\ \text{ computed as }\ \left\lfloor\frac{2V+Q}{2Q}\right\rfloor\ \text{ for } V=\sum q_ip_i,\ Q=\sum q_i$$
 
 Integer floor of $(2V+Q)/(2Q)$ is round-half-up with no floating point. Worked: fills $100@187.25$ and $300@187.35$ → $V=100\cdot187\,250\,000+300\cdot187\,350\,000=74\,930\,000\,000$, $Q=400$, VWAP $=187\,325\,000$ micros ($187.325$).
 
@@ -779,7 +779,7 @@ Integer floor of $(2V+Q)/(2Q)$ is round-half-up with no floating point. Worked: 
 - *Same direction or flat:* $x\leftarrow x+\sigma q$, $C\leftarrow C+qp$.
 - *Reducing:* realised $=\sigma_{pos}\cdot \min(q,|x|)\cdot(p-C/|x|)$; $C$ shrinks proportionally; a fill larger than $|x|$ flips the side and opens the remainder at $p$.
 
-Unrealised: $U=x\cdot\text{mark}-\operatorname{sgn}(x)\,C$ in micros. Everything is `bigint`; AGENTS rule 2 holds.
+Unrealised: $U=x\cdot\text{mark}-\text{sgn}(x)\,C$ in micros. Everything is `bigint`; AGENTS rule 2 holds.
 
 <a id="f-math-backoff"></a>
 
@@ -817,7 +817,7 @@ so `tt` scores higher on "**T**oggle **t**heme" (two word starts) than on "Quote
 
 With step $\Delta\in\{100\,000,\ 1\,000\,000\ (\text{Shift}),\ 10\,000\,000\ (\text{Alt})\}$ and current $n$:
 
-$$n'=\operatorname{clamp}\Big(\big(\lfloor n/\Delta\rfloor+1\big)\Delta,\ 0,\ N_{max}\Big)\ (\uparrow),\qquad n'=\operatorname{clamp}\Big(\big(\lceil n/\Delta\rceil-1\big)\Delta,\ 0,\ N_{max}\Big)\ (\downarrow)$$
+$$n'=\text{clamp}\Big(\big(\lfloor n/\Delta\rfloor+1\big)\Delta,\ 0,\ N_{max}\Big)\ (\uparrow),\qquad n'=\text{clamp}\Big(\big(\lceil n/\Delta\rceil-1\big)\Delta,\ 0,\ N_{max}\Big)\ (\downarrow)$$
 
 The result is always an exact multiple of $\Delta$: from $250\,000$, ↑ gives $300\,000$ and ↓ gives $200\,000$; from exactly $300\,000$, ↑ gives $400\,000$ (never a no-op).
 
@@ -1291,7 +1291,7 @@ How rounding works in `fmtMicros` (the only subtle bit): let $s = 10^{6-dp}$. Th
 `applyFill` has two branches (d = ±1 direction, n = current net):
 
 - **Adding** (`n = 0` or `sign(n) = d`): $n' = n + d q$, $c' = c + d q p$.
-- **Reducing/crossing:** closing $k=\min(|n|,q)$; cost released $c_k = \lfloor c\,k/|n|\rfloor$; realised $+= \operatorname{sign}(n)\,k\,p - c_k$; if $q>k$ the remainder **opens the opposite side at the fill price**: $n' = d(q-k)$, $c' = d(q-k)p$.
+- **Reducing/crossing:** closing $k=\min(|n|,q)$; cost released $c_k = \lfloor c\,k/|n|\rfloor$; realised $+= \text{sign}(n)\,k\,p - c_k$; if $q>k$ the remainder **opens the opposite side at the fill price**: $n' = d(q-k)$, $c' = d(q-k)p$.
 
 Worked: buy 100 @ 10, sell 150 @ 12 → close 100 for $+200$ realised, open short 50 @ 12 (`netQty = -50`, `costMicros = -600`).
 
