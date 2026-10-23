@@ -662,7 +662,9 @@ $$K < C_b \le A_b \qquad (\text{e.g. } 60 < 70 \le 100)$$
 
 This service chooses **at-least-once + idempotent write**:
 
-$$\text{rows}(k) = \begin{cases} 1 & \text{if the key } k=(\text{source},\text{trade\_id}) \text{ was delivered}\ \ge 1 \text{ times} \\ 0 & \text{otherwise} \end{cases}$$
+```math
+\text{rows}(k) = \begin{cases} 1 & \text{if the key } k=(\text{source},\text{trade\_id}) \text{ was delivered}\ \ge 1 \text{ times} \\ 0 & \text{otherwise} \end{cases}
+```
 
 Delivering the same trade $n\ge1$ times therefore yields the same database state as delivering it once: the SQL `ON CONFLICT … DO NOTHING` makes the operation **idempotent**: $f(f(x)) = f(x)$.
 
