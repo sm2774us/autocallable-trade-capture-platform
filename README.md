@@ -674,7 +674,9 @@ Delivering the same trade $n\ge1$ times therefore yields the same database state
 
 A topic is split into $P$ ordered logs called **partitions**. A message key $k$ picks the partition:
 
-$$\text{partition}(k) = \big(\text{murmur2}(k_{\text{utf8}})\ \&\ \texttt{0x7fffffff}\big) \bmod P$$
+$$
+\text{partition}(k) = \big(\text{murmur2}(k_{\text{utf8}}) \text{AND} \texttt{0x7fffffff}\big) \bmod P
+$$
 
 The mask clears the sign bit so the hash is non-negative. Messages with the **same key always land in the same partition**, and within a partition order is preserved. Here $k = \texttt{account:symbol}$, so all fills for one account in one stock are processed in order — essential for positions and P&L. Verified (✅) on 400 keys over $P=12$: counts ranged 25–40 (ideal $400/12\approx33.3$), see [§8.9](#f-core-capturedemo).
 
@@ -2551,31 +2553,31 @@ Design choice: the **quote price is sent as a decimal number** (`px`, convenient
 
 ```mermaid
 flowchart TB
-  subgraph boot["Boot"]
-    CA["CaptureApplication"] --> CP["CaptureProperties"]
-  end
-  subgraph out["Producing side"]
-    TP["TradePublisher"]
-    OR["OutboxRelay<br/>@Scheduled 200ms"]
-  end
-  K[("Kafka trades.normalized")]
-  subgraph in["Consuming side"]
-    TL["TradeListener"] --> DS["DedupStore  core"]
-    TL --> TSP{{"TradeStore"}}
-    TSP --> JS["JdbcTradeStore"]
-  end
-  subgraph safety["Failure + observability"]
-    KE["KafkaErrorHandlingConfig"]
-    LH["LagHealthIndicator"]
-  end
-  EN["EnrichmentProcessor<br/>trades.raw → trades.enriched"]
-  TP --> K
-  OR --> K
-  K --> TL
-  JS --> PG[("PostgreSQL")]
-  TL -. exception .-> KE -. DLT .-> K
-  LH -. admin API .-> K
-  EN -.-> K
+    subgraph boot["Boot"]
+        CA["CaptureApplication"] --> CP["CaptureProperties"]
+    end
+    subgraph out["Producing side"]
+        TP["TradePublisher"]
+        OR["OutboxRelay<br/>@Scheduled 200ms"]
+    end
+    K[("Kafka trades.normalized")]
+    subgraph in["Consuming side"]
+        TL["TradeListener"] --> DS["DedupStore core"]
+        TL --> TSP{{"TradeStore"}}
+        TSP --> JS["JdbcTradeStore"]
+    end
+    subgraph safety["Failure + observability"]
+        KE["KafkaErrorHandlingConfig"]
+        LH["LagHealthIndicator"]
+    end
+    EN["EnrichmentProcessor<br/>trades.raw → trades.enriched"]
+    TP --> K
+    OR --> K
+    K --> TL
+    JS --> PG[("PostgreSQL")]
+    TL -. exception .-> KE -. DLT .-> K
+    LH -. admin API .-> K
+    EN -.-> K
 ```
 
 ---
@@ -2708,15 +2710,15 @@ public void onTrade(ConsumerRecord<String,TradeEvent> record, Acknowledgment ack
 
 ```mermaid
 flowchart TD
-  R["record from Kafka"] --> Q1{"recent.contains key ?"}
-  Q1 -- "yes: seen recently" --> D1["duplicates++"]
-  Q1 -- "no" --> Q2{"store.insertIfAbsent trade"}
-  Q2 -- "throws" --> X["propagate to DefaultErrorHandler<br/>key NOT remembered: retry works, then DLT"]
-  Q2 -- "true: new row" --> REM["recent.remember key"] --> I["inserted++ and hub.publish trade<br/>browsers see it now"]
-  Q2 -- "false: conflict" --> REM2["recent.remember key"] --> D2["duplicates++  no broadcast"]
-  D1 --> ACK["ack.acknowledge  commit offset"]
-  I --> ACK
-  D2 --> ACK
+    R["record from Kafka"] --> Q1{"recent.contains key ?"}
+    Q1 -- "yes: seen recently" --> D1["duplicates++"]
+    Q1 -- "no" --> Q2{"store.insertIfAbsent trade"}
+    Q2 -- "throws" --> X["propagate to DefaultErrorHandler<br/>key NOT remembered: retry works, then DLT"]
+    Q2 -- "true: new row" --> REM["recent.remember key"] --> I["inserted++ and hub.publish trade<br/>browsers see it now"]
+    Q2 -- "false: conflict" --> REM2["recent.remember key"] --> D2["duplicates++ no broadcast"]
+    D1 --> ACK["ack.acknowledge commit offset"]
+    I --> ACK
+    D2 --> ACK
 ```
 
 | Mechanic | Why |
@@ -2748,14 +2750,14 @@ Two `@Bean`s:
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Processing
-  Processing --> Acked: success
-  Processing --> Retry: exception (retryable)
-  Retry --> Processing: wait 200, 400, 800, 1600, 3200 ms
-  Retry --> DLT: after 5 retries
-  Processing --> DLT: IllegalArgumentException or DeserializationException (no retry)
-  DLT --> Acked: commitRecovered
-  Acked --> [*]
+    [*] --> Processing
+    Processing --> Acked: success
+    Processing --> Retry: exception (retryable)
+    Retry --> Processing: wait 200, 400, 800, 1600, 3200 ms
+    Retry --> DLT: after 5 retries
+    Processing --> DLT: IllegalArgumentException or DeserializationException (no retry)
+    DLT --> Acked: commitRecovered
+    Acked --> [*]
 ```
 
 🧒 *Feynman:* A **mail-sorting room**: if a letter jams the machine, try again after short, growing pauses; if it's plainly unreadable, drop it in the "returned mail" bin straight away so the belt keeps moving.
@@ -2803,20 +2805,20 @@ Idea: the **output record** and the **consumed offset** commit atomically ⇒ *e
 
 ```mermaid
 flowchart LR
-  subgraph PIPE["existing pipeline"]
-    K[("Kafka")] --> TL["TradeListener"] --> DB[("trade table")]
-  end
-  TL -- "fresh insert only" --> HUB["LiveFeedHub<br/>attach · resync · publish · heartbeat"]
-  HUB --> LB["core/LiveBoard"]
-  HUB --> FJ["core/FeedJson"]
-  WSC["WebSocketConfig"] --> FSH["FeedSocketHandler x2<br/>quotes, trades"] --> HUB
-  UI["Browser"] <-- "WS /ws/quotes /ws/trades" --> FSH
-  UI -- "POST/GET /api/notes" --> NC["NotesController"] --> NT["core/NoteTerms"]
-  NC --> NS{{"NoteStore"}} --> JNS["JdbcNoteStore"] --> DB2[("note table V2")]
-  NC -. "NoteTerms.Invalid" .-> AEH["ApiExceptionHandler<br/>422 problem"]
-  UI -- "GET /api/system/status" --> SC["SystemController"] --> HUB
-  CID["CorrelationIdFilter"] -. "every HTTP request" .-> NC
-  DEMO["DemoTradeGenerator<br/>capture.demo.enabled"] --> TP["TradePublisher"] --> K
+    subgraph PIPE["existing pipeline"]
+        K[("Kafka")] --> TL["TradeListener"] --> DB[("trade table")]
+    end
+    TL -- "fresh insert only" --> HUB["LiveFeedHub<br/>attach · resync · publish · heartbeat"]
+    HUB --> LB["core/LiveBoard"]
+    HUB --> FJ["core/FeedJson"]
+    WSC["WebSocketConfig"] --> FSH["FeedSocketHandler x2<br/>quotes, trades"] --> HUB
+    UI["Browser"] <-- "WS /ws/quotes /ws/trades" --> FSH
+    UI -- "POST/GET /api/notes" --> NC["NotesController"] --> NT["core/NoteTerms"]
+    NC --> NS{{"NoteStore"}} --> JNS["JdbcNoteStore"] --> DB2[("note table V2")]
+    NC -. "NoteTerms.Invalid" .-> AEH["ApiExceptionHandler<br/>422 problem"]
+    UI -- "GET /api/system/status" --> SC["SystemController"] --> HUB
+    CID["CorrelationIdFilter"] -. "every HTTP request" .-> NC
+    DEMO["DemoTradeGenerator<br/>capture.demo.enabled"] --> TP["TradePublisher"] --> K
 ```
 
 <a id="f-src-main-java-com-example-capture-spring-livefeedhub-java"></a>
@@ -3587,14 +3589,14 @@ Describes the **terminal** (not a blotter): the stack table (spartan/ng + Tailwi
 
 ```mermaid
 flowchart LR
-  SRC["source + pom.xml"] --> B1["Docker build stage<br/>UBI9 + JDK17 + Maven"]
-  B1 --> JAR["target/trade-capture.jar"]
-  JAR --> EX["java -Djarmode=tools extract --layers"]
-  EX --> L["4 layers:<br/>dependencies · loader · snapshot-deps · application"]
-  L --> R["Runtime stage<br/>UBI9 JRE 17"]
-  R --> IMG["image registry.example.com/trading/trade-capture:VERSION"]
-  IMG --> ECR[("ECR / ACR / Artifact Registry<br/>immutable tags")]
-  ECR --> K8S["Deployment x3 pods<br/>kustomize overlay"]
+    SRC["source + pom.xml"] --> B1["Docker build stage<br/>UBI9 + JDK17 + Maven"]
+    B1 --> JAR["target/trade-capture.jar"]
+    JAR --> EX["java -Djarmode=tools extract --layers"]
+    EX --> L["4 layers:<br/>dependencies · loader · snapshot-deps · application"]
+    L --> R["Runtime stage<br/>UBI9 JRE 17"]
+    R --> IMG["image [registry.example.com/trading/trade-capture:VERSION](https://registry.example.com/trading/trade-capture:VERSION)"]
+    IMG --> ECR[("ECR / ACR / Artifact Registry<br/>immutable tags")]
+    ECR --> K8S["Deployment x3 pods<br/>kustomize overlay"]
 ```
 
 <a id="f-docker-dockerfile"></a>
@@ -3660,13 +3662,13 @@ curl localhost:8080/actuator/health/readiness
 
 ```mermaid
 flowchart LR
-  P["package.json + package-lock.json"] --> CI["npm ci (cache mount)"]
-  CI --> SRC["angular.json · tsconfig* · .postcssrc.json · public/ · src/"]
-  SRC --> NB["ng build --configuration production"]
-  NB --> DIST["dist/blotter/browser"]
-  DIST --> NG["nginxinc/nginx-unprivileged:1.27-alpine<br/>/usr/share/nginx/html"]
-  CONF["nginx.conf"] --> NG
-  NG --> IMG["image: serves :8080, proxies /api /ws to capture"]
+    P["package.json + package-lock.json"] --> CI["npm ci (cache mount)"]
+    CI --> SRC["angular.json · tsconfig* · .postcssrc.json · public/ · src/"]
+    SRC --> NB["ng build --configuration production"]
+    NB --> DIST["dist/blotter/browser"]
+    DIST --> NG["nginxinc/nginx-unprivileged:1.27-alpine<br/>/usr/share/nginx/html"]
+    CONF["nginx.conf"] --> NG
+    NG --> IMG["image: serves :8080, proxies /api /ws to capture"]
 ```
 
 | Line(s) | Explanation |
@@ -3726,11 +3728,11 @@ Excludes `node_modules`, `dist`, `.angular`, `e2e`, `test-results`, `playwright-
 
 ```mermaid
 flowchart LR
-  B["Browser :8081"] --> W["web (nginx :8080)"]
-  W -- "/api · /ws" --> C["capture (Spring :8080)"]
-  C -- "JDBC" --> P[("postgres:16-alpine")]
-  C -- "Kafka protocol" --> K[("apache/kafka:3.8.0  KRaft, single node")]
-  C -. "CAPTURE_DEMO=true: DemoTradeGenerator publishes into Kafka" .-> K
+    B["Browser :8081"] --> W["web (nginx :8080)"]
+    W -- "/api · /ws" --> C["capture (Spring :8080)"]
+    C -- "JDBC" --> P[("postgres:16-alpine")]
+    C -- "Kafka protocol" --> K[("apache/kafka:3.8.0 KRaft, single node")]
+    C -. "CAPTURE_DEMO=true: DemoTradeGenerator publishes into Kafka" .-> K
 ```
 
 | Service | Key settings |
@@ -3750,26 +3752,26 @@ Run: `export DB_PASSWORD=anything && docker compose -f docker/docker-compose.yml
 
 ```mermaid
 flowchart TB
-  NS["Namespace capture<br/>PodSecurity: restricted"]
-  SA["ServiceAccount trade-capture<br/>no API token · cloud identity annotation"]
-  CM1["ConfigMap trade-capture<br/>env flags"]
-  CM2["ConfigMap trade-capture-endpoints<br/>overlay: bootstrap + db-url"]
-  SEC["Secret trade-capture-db<br/>created by ExternalSecret"]
-  DEP["Deployment trade-capture<br/>3 replicas"]
-  SVC["Service :80 → :8080"]
-  PDB["PodDisruptionBudget minAvailable 2"]
-  NP["NetworkPolicy default-deny + allow-list"]
-  KEDA["ScaledObject (KEDA)<br/>NOT in kustomization"]
-  ES["ExternalSecret → AWS Secrets Manager"]
-  NS --> SA & CM1 & DEP & SVC & PDB & NP
-  CM1 --> DEP
-  CM2 --> DEP
-  ES --> SEC --> DEP
-  SA --> DEP
-  SVC -. selects .-> DEP
-  PDB -. protects .-> DEP
-  NP -. restricts .-> DEP
-  KEDA -. scales .-> DEP
+    NS["Namespace capture<br/>PodSecurity: restricted"]
+    SA["ServiceAccount trade-capture<br/>no API token · cloud identity annotation"]
+    CM1["ConfigMap trade-capture<br/>env flags"]
+    CM2["ConfigMap trade-capture-endpoints<br/>overlay: bootstrap + db-url"]
+    SEC["Secret trade-capture-db<br/>created by ExternalSecret"]
+    DEP["Deployment trade-capture<br/>3 replicas"]
+    SVC["Service :80 → :8080"]
+    PDB["PodDisruptionBudget minAvailable 2"]
+    NP["NetworkPolicy default-deny + allow-list"]
+    KEDA["ScaledObject (KEDA)<br/>NOT in kustomization"]
+    ES["ExternalSecret → AWS Secrets Manager"]
+    NS --> SA & CM1 & DEP & SVC & PDB & NP
+    CM1 --> DEP
+    CM2 --> DEP
+    ES --> SEC --> DEP
+    SA --> DEP
+    SVC -. selects .-> DEP
+    PDB -. protects .-> DEP
+    NP -. restricts .-> DEP
+    KEDA -. scales .-> DEP
 ```
 
 Kustomize merges `k8s/base` (cloud-neutral) with an **overlay** (`k8s/overlays/aws`) via `kubectl apply -k k8s/overlays/aws`.
@@ -3964,16 +3966,16 @@ tofu output                         # copy values into k8s/overlays/<cloud>/
 
 ```mermaid
 flowchart LR
-  A["tofu apply (per cloud)"] --> B["Network + private K8s cluster"]
-  A --> C["Postgres 16 (HA, private)"]
-  A --> D["Kafka (managed)"]
-  A --> E["Container registry (immutable tags)"]
-  A --> F["Workload identity + roles"]
-  A --> O["outputs: bootstrap, db endpoint, identity"]
-  O --> K["k8s/overlays/cloud: endpoints + SA annotation"]
-  E --> P["docker push image"]
-  P --> K
-  K --> R["kubectl apply -k  ⇒ pods run in the private cluster"]
+    A["tofu apply (per cloud)"] --> B["Network + private K8s cluster"]
+    A --> C["Postgres 16 (HA, private)"]
+    A --> D["Kafka (managed)"]
+    A --> E["Container registry (immutable tags)"]
+    A --> F["Workload identity + roles"]
+    A --> O["outputs: bootstrap, db endpoint, identity"]
+    O --> K["k8s/overlays/cloud: endpoints + SA annotation"]
+    E --> P["docker push image"]
+    P --> K
+    K --> R["kubectl apply -k ⇒ pods run in the private cluster"]
 ```
 
 ---
@@ -4345,22 +4347,22 @@ The *protocol* is pinned by `DedupStoreTest.keyRememberedOnlyAfterTheWorkSucceed
 
 ```mermaid
 flowchart LR
-  subgraph NOW["Now (make v2 trustworthy)"]
-    A1["F-27 run mvn verify + Spotless + docker build"] --> A2["F-29 authN/Z on /api and /ws"]
-    A2 --> A3["F-22 per-pod consumer group + warm board"]
-    A3 --> A4["F-5 DB user, F-7 egress 443, F-8 IAM handler"]
-  end
-  subgraph NEXT["Next (close the loop)"]
-    B1["F-23 server positions"] --> B2["F-2 outbox writer + serializer"]
-    B2 --> B3["F-9 topics + DLT in IaC"]
-    B3 --> B4["F-6 KEDA wired, F-31 image tags"]
-  end
-  subgraph LATER["Later (polish and scale)"]
-    C1["F-21 CI + web manifests"] --> C2["F-18 Azure/GCP parity"]
-    C2 --> C3["F-24 keep panels mounted, F-26 lazy chart, F-25 fonts"]
-    C3 --> C4["batch consume, jsonb, partitioning, order-entry audit trail"]
-  end
-  NOW --> NEXT --> LATER
+    subgraph NOW["Now (make v2 trustworthy)"]
+        A1["F-27 run mvn verify + Spotless + docker build"] --> A2["F-29 authN/Z on /api and /ws"]
+        A2 --> A3["F-22 per-pod consumer group + warm board"]
+        A3 --> A4["F-5 DB user, F-7 egress 443, F-8 IAM handler"]
+    end
+    subgraph NEXT["Next (close the loop)"]
+        B1["F-23 server positions"] --> B2["F-2 outbox writer + serializer"]
+        B2 --> B3["F-9 topics + DLT in IaC"]
+        B3 --> B4["F-6 KEDA wired, F-31 image tags"]
+    end
+    subgraph LATER["Later (polish and scale)"]
+        C1["F-21 CI + web manifests"] --> C2["F-18 Azure/GCP parity"]
+        C2 --> C3["F-24 keep panels mounted, F-26 lazy chart, F-25 fonts"]
+        C3 --> C4["batch consume, jsonb, partitioning, order-entry audit trail"]
+    end
+    NOW --> NEXT --> LATER
 ```
 
 ### 14.3 Extension recipes
