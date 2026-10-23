@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trade-capture
+  namespace: capture
+  labels:
+    app.kubernetes.io/name: trade-capture
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0        # never dip below the desired consumer count while rolling
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trade-capture
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trade-capture
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /actuator/prometheus
+    spec:
+      serviceAccountName: trade-capture
+      terminationGracePeriodSeconds: 45     # > spring.lifecycle.timeout-per-shutdown-phase (30 s)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 185                      # the UBI openjdk user
+        runAsGroup: 0
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule  # one zone lost = at most a third of consumers lost
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: trade-capture
+      containers:
+        - name: trade-capture
+          image: registry.example.com/trading/trade-capture:1.0.0   # immutable tag; pin by digest in prod
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: trade-capture
+          env:
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                configMapKeyRef:
+                  name: trade-capture-endpoints
+                  key: kafka-bootstrap
+            - name: DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: trade-capture-endpoints
+                  key: db-url
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: trade-capture-db
+                  key: password
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name   # stable pod name = static Kafka membership id
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              memory: 1Gi                    # memory limit == request; no CPU limit (avoids throttling)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 30             # up to 150 s for a cold JVM
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]      # let endpoints deregister before SIGTERM handling
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

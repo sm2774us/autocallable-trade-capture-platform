@@ -1,0 +1,42 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: capture
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: trade-capture
+  namespace: capture
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: trade-capture
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8       # private ranges only: brokers and database are in-VPC
+      ports:
+        - { port: 9092, protocol: TCP }
+        - { port: 9093, protocol: TCP }
+        - { port: 9098, protocol: TCP }
+        - { port: 5432, protocol: TCP }

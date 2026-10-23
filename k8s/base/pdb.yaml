@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trade-capture
+  namespace: capture
+spec:
+  minAvailable: 2          # node drains and upgrades may evict one consumer at a time
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trade-capture

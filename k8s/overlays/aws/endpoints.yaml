@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-capture-endpoints
+  namespace: capture
+data:
+  kafka-bootstrap: b-1.tradecapture.xxxxxx.c3.kafka.us-east-1.amazonaws.com:9098
+  db-url: jdbc:postgresql://trade-capture-prod.xxxxxx.us-east-1.rds.amazonaws.com:5432/capture

@@ -1,0 +1,20 @@
+# KEDA scales the consumer on Kafka lag, the metric that actually measures "behind", instead of CPU.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: trade-capture
+  namespace: capture
+spec:
+  scaleTargetRef:
+    name: trade-capture
+  minReplicaCount: 3
+  maxReplicaCount: 12      # never more than the partition count: extra consumers would sit idle
+  cooldownPeriod: 300
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: ${KAFKA_BOOTSTRAP}   # substituted by the overlay
+        consumerGroup: trade-capture
+        topic: trades.normalized
+        lagThreshold: "500"                    # target lag per replica
+        limitToPartitionsWithLag: "true"

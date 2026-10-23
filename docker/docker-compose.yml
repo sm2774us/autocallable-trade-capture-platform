@@ -1,0 +1,52 @@
+# Local full stack: Postgres + Kafka (KRaft) + Spring capture service + web terminal.
+#   export DB_PASSWORD=...   (any value; nothing is committed)
+#   docker compose -f docker/docker-compose.yml up --build
+# Open http://localhost:8081 . CAPTURE_DEMO=true makes the service publish synthetic trades
+# through the real Kafka -> listener -> Postgres -> WebSocket path.
+name: trade-capture
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: capture
+      POSTGRES_USER: capture
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?export DB_PASSWORD first}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capture -d capture"]
+      interval: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+  capture:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka: {condition: service_started}
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/capture
+      DB_USER: capture
+      DB_PASSWORD: ${DB_PASSWORD:?export DB_PASSWORD first}
+      KAFKA_BOOTSTRAP: kafka:9092
+      CAPTURE_DEMO: ${CAPTURE_DEMO:-true}
+
+  web:
+    build:
+      context: ../web
+    depends_on: [capture]
+    ports:
+      - "8081:8080"

@@ -1,0 +1,79 @@
+# Boot 3.x configuration for the trade-capture service. Every value that differs per
+# environment is an ${ENV:default} placeholder, so the same image runs in dev, UAT and prod.
+spring:
+  application:
+    name: trade-capture
+  lifecycle:
+    timeout-per-shutdown-phase: 30s        # let in-flight records finish before SIGKILL
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/capture}
+    username: ${DB_USER:capture}
+    password: ${DB_PASSWORD:}              # injected from a Secret, never committed
+    hikari:
+      maximum-pool-size: 10                # >= listener concurrency; small on purpose
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}   # SASL_SSL on MSK / Event Hubs
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS:}
+    producer:
+      acks: all                            # wait for every in-sync replica
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      compression-type: lz4
+      properties:
+        enable.idempotence: true           # broker de-duplicates producer retries
+        max.in.flight.requests.per.connection: 5   # still ordered while idempotent
+        linger.ms: 5                       # tiny batching window: throughput for 5 ms latency
+        delivery.timeout.ms: 30000
+    consumer:
+      group-id: trade-capture
+      enable-auto-commit: false            # commit manually after the DB commit
+      auto-offset-reset: earliest
+      isolation-level: read_committed      # skip aborted transactional records
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      max-poll-records: 200
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.value.default.type: com.example.capture.core.TradeEvent
+        spring.json.trusted.packages: com.example.capture.core
+        partition.assignment.strategy: org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+        max.poll.interval.ms: 300000
+        group.instance.id: ${HOSTNAME:local}   # static membership: rolling restarts do not rebalance
+    # transaction-id-prefix: capture-tx-        # enable for EnrichmentProcessor (Kafka transactions)
+
+capture:
+  topic: trades.normalized
+  dead-letter-suffix: .DLT
+  max-retries: 5
+  retry-initial-millis: 200
+  retry-multiplier: 2.0
+  retry-max-millis: 5000
+  lag-warn: 1000
+  lag-critical: 10000
+  demo:
+    enabled: ${CAPTURE_DEMO:false}         # synthetic order flow through the real pipeline
+    interval-millis: ${CAPTURE_DEMO_INTERVAL_MS:250}
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true                      # /actuator/health/liveness and /readiness
+      show-details: when-authorized
+  health:
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

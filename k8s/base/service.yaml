@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: trade-capture
+  namespace: capture
+spec:
+  selector:
+    app.kubernetes.io/name: trade-capture
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

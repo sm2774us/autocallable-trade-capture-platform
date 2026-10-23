@@ -1,0 +1,53 @@
+{
+  "name": "trade-capture-terminal",
+  "version": "2.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test --watch=false",
+    "test:unit": "ng test --watch=false --include \"src/app/{core,state,feed,api}/**/*.spec.ts\"",
+    "test:integration": "ng test --watch=false --include \"src/app/**/*.int.spec.ts\"",
+    "e2e": "ng build && playwright test",
+    "mock": "node e2e/mock-backend.mjs",
+    "shots": "ng build && playwright test --config=playwright.shots.config.ts",
+    "format": "prettier --write \"src/**/*.ts\" \"e2e/**/*.{ts,mjs}\" playwright.config.ts playwright.shots.config.ts"
+  },
+  "private": true,
+  "packageManager": "npm@10.9.4",
+  "dependencies": {
+    "@angular/cdk": "^21.2.14",
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@ngrx/signals": "^21.1.1",
+    "@spartan-ng/brain": "^1.6.3",
+    "@tanstack/angular-query-experimental": "^5.104.2",
+    "@tanstack/angular-table": "^8.21.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lightweight-charts": "^5.2.1",
+    "rxjs": "~7.8.0",
+    "tailwind-merge": "^3.7.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.26",
+    "@angular/cli": "^21.2.26",
+    "@angular/compiler-cli": "^21.2.0",
+    "@playwright/test": "^1.64.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/ws": "^8.18.2",
+    "jsdom": "^28.0.0",
+    "postcss": "^8.5.30",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8",
+    "ws": "^8.22.0"
+  }
+}
